@@ -1,0 +1,14 @@
+node_modules/
+.DS_Store
+.env
+Frontend/node_modules/
+Backend/node_modules/
+Backend/storage/*.key
+Backend/storage/framework/cache/data/*
+Backend/storage/framework/views/*.php
+Backend/storage/framework/sessions/*
+Backend/storage/logs/*.log
+Frontend/build/
+.idea/
+.vscode/
+*.log

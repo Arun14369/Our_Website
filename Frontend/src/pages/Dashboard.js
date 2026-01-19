@@ -4,7 +4,8 @@ import api from '../services/api';
 import Modal from '../components/Modal';
 import Sidebar from '../components/Sidebar';
 import { Toaster, toast } from 'react-hot-toast';
-import { FaBuilding, FaUserTie, FaUsers, FaChartLine, FaTrash, FaEdit, FaPlus, FaCalendarAlt, FaFilter, FaArrowLeft, FaCheck } from 'react-icons/fa';
+import { FaBuilding, FaUserTie, FaUsers, FaChartLine, FaTrash, FaEdit, FaPlus, FaCalendarAlt, FaFilter, FaArrowLeft, FaCheck, FaFileExport, FaHistory } from 'react-icons/fa';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
 import './Dashboard.css';
 
 function Dashboard() {
@@ -13,7 +14,8 @@ function Dashboard() {
         total_companies: 0,
         total_supervisors: 0,
         total_workers: 0,
-        today_attendance: 0
+        today_attendance: 0,
+        attendance_trend: []
     });
     const [companies, setCompanies] = useState([]);
     const [supervisors, setSupervisors] = useState([]);
@@ -34,6 +36,7 @@ function Dashboard() {
     const [isEditMode, setIsEditMode] = useState(false);
     const [editingId, setEditingId] = useState(null);
     const [formData, setFormData] = useState({});
+    const [workerHistory, setWorkerHistory] = useState(null);
 
     useEffect(() => {
         fetchInitialData();
@@ -212,6 +215,40 @@ function Dashboard() {
         }
     };
 
+    const fetchWorkerHistory = async (workerId) => {
+        try {
+            setModalType('worker_history');
+            setIsModalOpen(true);
+            const res = await api.get(`/super-admin/workers/${workerId}/history`);
+            setWorkerHistory(res.data);
+        } catch (error) {
+            toast.error('Failed to load worker history');
+        }
+    };
+
+    const handleExportAttendance = async () => {
+        try {
+            const params = {
+                company_id: attendanceCompanyFilter,
+                start_date: attendanceDateFilter,
+                end_date: attendanceDateFilter
+            };
+            const response = await api.get('/super-admin/attendance/export', { 
+                params,
+                responseType: 'blob'
+            });
+            const url = window.URL.createObjectURL(new Blob([response.data]));
+            const link = document.createElement('a');
+            link.href = url;
+            link.setAttribute('download', `Attendance_Report_${attendanceDateFilter}.csv`);
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+        } catch (error) {
+            toast.error('Export failed');
+        }
+    };
+
     // Attendance Handlers
     const openEditAttendance = (record) => {
         setModalType('attendance');
@@ -312,6 +349,41 @@ function Dashboard() {
                                     <div className="stat-info">
                                         <h3>{stats.today_attendance}</h3>
                                         <p>Present Today</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="analytics-section">
+                                <div className="section-card chart-card">
+                                    <div className="card-header">
+                                        <h3>Attendance Trend (Last 7 Days)</h3>
+                                        <p>Total present count across all companies</p>
+                                    </div>
+                                    <div className="chart-container" style={{ height: '300px', width: '100%' }}>
+                                        <ResponsiveContainer width="100%" height="100%">
+                                            <AreaChart data={stats.attendance_trend}>
+                                                <defs>
+                                                    <linearGradient id="colorCount" x1="0" y1="0" x2="0" y2="1">
+                                                        <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.1}/>
+                                                        <stop offset="95%" stopColor="#4f46e5" stopOpacity={0}/>
+                                                    </linearGradient>
+                                                </defs>
+                                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                                                <XAxis 
+                                                    dataKey="date" 
+                                                    axisLine={false} 
+                                                    tickLine={false} 
+                                                    tick={{ fontSize: 12, fill: '#64748b' }}
+                                                    tickFormatter={(str) => new Date(str).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                                                />
+                                                <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} />
+                                                <Tooltip 
+                                                    contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
+                                                    labelStyle={{ fontWeight: 600, marginBottom: '4px' }}
+                                                />
+                                                <Area type="monotone" dataKey="count" stroke="#4f46e5" strokeWidth={3} fillOpacity={1} fill="url(#colorCount)" />
+                                            </AreaChart>
+                                        </ResponsiveContainer>
                                     </div>
                                 </div>
                             </div>
@@ -457,6 +529,7 @@ function Dashboard() {
                                                     <td><span className="badge">{worker.team?.name || 'No Team'}</span></td>
                                                     <td>
                                                         <div className="table-actions">
+                                                            <button className="icon-btn" title="View History" onClick={() => fetchWorkerHistory(worker.id)}><FaHistory /></button>
                                                             <button className="icon-btn edit" onClick={() => openEditWorker(worker)}><FaEdit /></button>
                                                             <button className="icon-btn delete" onClick={() => handleDeleteWorker(worker.id)}><FaTrash /></button>
                                                         </div>
@@ -490,6 +563,9 @@ function Dashboard() {
                                             style={{ border: 'none', background: 'transparent', outline: 'none', fontWeight: 600 }}
                                         />
                                     </div>
+                                    <button className="add-btn" style={{ background: '#10b981' }} onClick={handleExportAttendance}>
+                                        <FaFileExport /> Export CSV
+                                    </button>
                                 </div>
                             </div>
 
@@ -674,6 +750,50 @@ function Dashboard() {
                         </div>
                         <button type="submit" className="submit-btn">Update Attendance Status</button>
                     </form>
+                )}
+
+                {modalType === 'worker_history' && (
+                    <div className="history-modal-content">
+                        {!workerHistory ? <p>Loading history...</p> : (
+                            <>
+                                <div className="worker-brief" style={{ marginBottom: '1.5rem', padding: '1rem', background: '#f8fafc', borderRadius: '8px' }}>
+                                    <h4 style={{ margin: 0 }}>{workerHistory.worker.name}</h4>
+                                    <p style={{ margin: '4px 0', fontSize: '0.875rem', color: '#64748b' }}>
+                                        {workerHistory.worker.team?.name} | {workerHistory.worker.company?.name}
+                                    </p>
+                                </div>
+                                <div className="history-list" style={{ maxHeight: '400px', overflowY: 'auto' }}>
+                                    <table className="data-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Date</th>
+                                                <th>Status</th>
+                                                <th>Notes</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {workerHistory.attendance.map(h => (
+                                                <tr key={h.id}>
+                                                    <td>{new Date(h.date).toLocaleDateString()}</td>
+                                                    <td>
+                                                        <span className={`status-badge ${h.status}`}>
+                                                            {h.status}
+                                                        </span>
+                                                    </td>
+                                                    <td style={{ fontSize: '0.8rem' }}>{h.notes || '-'}</td>
+                                                </tr>
+                                            ))}
+                                            {workerHistory.attendance.length === 0 && (
+                                                <tr>
+                                                    <td colSpan="3" style={{ textAlign: 'center', padding: '1rem' }}>No history found</td>
+                                                </tr>
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </>
+                        )}
+                    </div>
                 )}
             </Modal>
         </div>

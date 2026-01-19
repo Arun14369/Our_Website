@@ -15,12 +15,20 @@ class SupervisorController extends Controller
     {
         $companyId = $request->user()->company_id;
         
+        $teamStats = Team::where('company_id', $companyId)
+            ->withCount(['workers', 'workers as present_today_count' => function ($query) {
+                $query->whereHas('attendances', function ($q) {
+                    $q->whereDate('date', now()->toDateString())->where('status', 'present');
+                });
+            }])->get();
+
         return response()->json([
             'total_teams' => Team::where('company_id', $companyId)->count(),
             'total_workers' => Worker::where('company_id', $companyId)->count(),
             'today_attendance' => Attendance::whereHas('worker', function($q) use ($companyId) {
                 $q->where('company_id', $companyId);
             })->whereDate('date', now()->toDateString())->count(),
+            'team_stats' => $teamStats,
         ]);
     }
 
@@ -133,5 +141,65 @@ class SupervisorController extends Controller
         $worker->delete();
 
         return response()->json(['message' => 'Worker deleted successfully']);
+    }
+
+    public function workerHistory(Request $request, $id)
+    {
+        $companyId = $request->user()->company_id;
+        $worker = Worker::where('company_id', $companyId)->with(['team'])->findOrFail($id);
+        
+        $attendance = Attendance::where('worker_id', $id)
+            ->orderBy('date', 'desc')
+            ->get();
+
+        return response()->json([
+            'worker' => $worker,
+            'attendance' => $attendance
+        ]);
+    }
+
+    public function exportAttendance(Request $request)
+    {
+        $companyId = $request->user()->company_id;
+        $query = Attendance::whereHas('worker', function($q) use ($companyId) {
+                $q->where('company_id', $companyId);
+            })
+            ->with(['worker', 'worker.team']);
+
+        if ($request->has('start_date') && $request->has('end_date')) {
+            $query->whereBetween('date', [$request->start_date, $request->end_date]);
+        }
+
+        $records = $query->get();
+
+        $csvFileName = 'company_attendance_report_' . now()->timestamp . '.csv';
+        $headers = array(
+            "Content-type"        => "text/csv",
+            "Content-Disposition" => "attachment; filename=$csvFileName",
+            "Pragma"              => "no-cache",
+            "Cache-Control"       => "must-revalidate, post-check=0, pre-check=0",
+            "Expires"             => "0"
+        );
+
+        $columns = array('Date', 'Worker Name', 'Team', 'Status', 'Notes');
+
+        $callback = function() use($records, $columns) {
+            $file = fopen('php://output', 'w');
+            fputcsv($file, $columns);
+
+            foreach ($records as $record) {
+                fputcsv($file, array(
+                    $record->date,
+                    $record->worker->name,
+                    $record->worker->team->name,
+                    $record->status,
+                    $record->notes
+                ));
+            }
+
+            fclose($file);
+        };
+
+        return response()->stream($callback, 200, $headers);
     }
 }
