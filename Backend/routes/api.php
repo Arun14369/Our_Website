@@ -36,6 +36,8 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/super-admin/attendance', [SuperAdminController::class, 'allAttendance']);
         Route::put('/super-admin/attendance/{id}', [SuperAdminController::class, 'updateAttendance']);
         Route::delete('/super-admin/attendance/{id}', [SuperAdminController::class, 'deleteAttendance']);
+        Route::get('/super-admin/workers/{id}/history', [SuperAdminController::class, 'workerHistory']);
+        Route::get('/super-admin/attendance/export', [SuperAdminController::class, 'exportAttendance']);
     });
 
     // Supervisor Routes
@@ -48,5 +50,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('/supervisor/workers/{id}', [SupervisorController::class, 'destroyWorker']);
         Route::post('/supervisor/attendance', [SupervisorController::class, 'storeAttendance']);
         Route::get('/supervisor/attendance-history', [SupervisorController::class, 'attendanceHistory']);
+        Route::get('/supervisor/workers/{id}/history', [SupervisorController::class, 'workerHistory']);
+        Route::get('/supervisor/attendance/export', [SupervisorController::class, 'exportAttendance']);
     });
 });

@@ -3,12 +3,18 @@ import { useAuth } from '../context/AuthContext';
 import api from '../services/api';
 import Modal from '../components/Modal';
 import { Toaster, toast } from 'react-hot-toast';
-import { FaUsers, FaClipboardCheck, FaUsersCog, FaSignOutAlt, FaCalendarDay, FaUserCircle, FaArrowRight, FaPlus, FaEdit, FaTrash } from 'react-icons/fa';
+import { FaUsers, FaClipboardCheck, FaUsersCog, FaSignOutAlt, FaCalendarDay, FaUserCircle, FaArrowRight, FaPlus, FaEdit, FaTrash, FaFileExport, FaHistory } from 'react-icons/fa';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import './SupervisorDashboard.css';
 
 function SupervisorDashboard() {
     const { user, logout } = useAuth();
-    const [stats, setStats] = useState({ total_teams: 0, total_workers: 0, today_attendance: 0 });
+    const [stats, setStats] = useState({
+        total_teams: 0,
+        total_workers: 0,
+        today_attendance: 0,
+        team_stats: []
+    });
     const [workers, setWorkers] = useState([]);
     const [teams, setTeams] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -23,6 +29,7 @@ function SupervisorDashboard() {
     const [modalType, setModalType] = useState('add'); // 'add' or 'edit'
     const [editingWorker, setEditingWorker] = useState(null);
     const [formData, setFormData] = useState({ name: '', phone: '', team_id: '' });
+    const [workerHistory, setWorkerHistory] = useState(null);
 
     useEffect(() => {
         fetchDashboardData();
@@ -176,6 +183,48 @@ function SupervisorDashboard() {
         window.location.href = '/login';
     };
 
+    const fetchWorkerHistory = async (workerId) => {
+        try {
+            setModalType('worker_history');
+            setIsModalOpen(true);
+            const res = await api.get(`/supervisor/workers/${workerId}/history`);
+            setWorkerHistory(res.data);
+        } catch (error) {
+            toast.error('Failed to load worker history');
+        }
+    };
+
+    const handleExportAttendance = async () => {
+        try {
+            toast.loading('Preparing export...', { id: 'export-toast' });
+            const params = {
+                start_date: attendanceDate,
+                end_date: attendanceDate
+            };
+            const response = await api.get('/supervisor/attendance/export', {
+                params,
+                responseType: 'blob'
+            });
+
+            // Create a blob URL and trigger download
+            const blob = new Blob([response.data], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.setAttribute('download', `Company_Attendance_${attendanceDate}.csv`);
+            document.body.appendChild(link);
+            link.click();
+
+            // Cleanup
+            document.body.removeChild(link);
+            window.URL.revokeObjectURL(url);
+            toast.success('Report downloaded', { id: 'export-toast' });
+        } catch (error) {
+            console.error('Export failed:', error);
+            toast.error('Export failed. Please try again.', { id: 'export-toast' });
+        }
+    };
+
     if (loading) return <div className="loading-screen">buildPro: Synchronizing Data...</div>;
 
     return (
@@ -230,6 +279,27 @@ function SupervisorDashboard() {
                     </div>
                 </div>
 
+                <div className="analytics-section" style={{ marginBottom: '2rem' }}>
+                    <div className="content-card chart-card" style={{ padding: '1.5rem' }}>
+                        <h3 style={{ marginBottom: '1rem', fontSize: '1rem', fontWeight: 700 }}>Team Attendance Overview (Today)</h3>
+                        <div style={{ height: '250px', width: '100%' }}>
+                            <ResponsiveContainer width="100%" height="100%">
+                                <BarChart data={stats.team_stats}>
+                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                                    <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} />
+                                    <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} />
+                                    <Tooltip
+                                        cursor={{ fill: '#f8fafc' }}
+                                        contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
+                                    />
+                                    <Bar dataKey="workers_count" name="Total Workers" fill="#e2e8f0" radius={[4, 4, 0, 0]} />
+                                    <Bar dataKey="present_today_count" name="Present Today" fill="#4f46e5" radius={[4, 4, 0, 0]} />
+                                </BarChart>
+                            </ResponsiveContainer>
+                        </div>
+                    </div>
+                </div>
+
                 <div className="content-card">
                     {activeTab === 'attendance' && (
                         <div className="attendance-section">
@@ -258,6 +328,13 @@ function SupervisorDashboard() {
                                         value={attendanceDate}
                                         onChange={(e) => setAttendanceDate(e.target.value)}
                                     />
+                                    <button
+                                        className="action-btn-sm"
+                                        onClick={handleExportAttendance}
+                                        style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', border: '1px solid #e2e8f0', background: 'white', color: '#64748b' }}
+                                    >
+                                        <FaFileExport /> Export
+                                    </button>
                                     <button
                                         className="save-btn"
                                         onClick={submitAttendance}
@@ -371,6 +448,7 @@ function SupervisorDashboard() {
                                                 <p style={{ marginTop: '0.25rem' }}>{worker.phone || 'No Contact Info'}</p>
                                             </div>
                                             <div className="card-actions-overlay" style={{ display: 'flex', gap: '0.5rem' }}>
+                                                <button className="icon-btn" title="History" onClick={() => fetchWorkerHistory(worker.id)}><FaHistory /></button>
                                                 <button className="icon-btn" onClick={() => openEditModal(worker)}><FaEdit /></button>
                                                 <button className="icon-btn delete" onClick={() => handleDeleteWorker(worker.id)}><FaTrash /></button>
                                             </div>
@@ -455,6 +533,48 @@ function SupervisorDashboard() {
                         {modalType === 'add' ? 'Add Worker to Registry' : 'Save Updated Details'}
                     </button>
                 </form>
+            </Modal>
+
+            <Modal isOpen={isModalOpen && modalType === 'worker_history'} onClose={() => setIsModalOpen(false)} title="Worker Attendance History">
+                <div className="history-modal-content">
+                    {!workerHistory ? <p>Loading history...</p> : (
+                        <>
+                            <div className="worker-brief" style={{ marginBottom: '1.5rem', padding: '1rem', background: '#f8fafc', borderRadius: '8px' }}>
+                                <h4 style={{ margin: 0 }}>{workerHistory.worker.name}</h4>
+                                <p style={{ margin: '4px 0', fontSize: '0.875rem', color: '#64748b' }}>
+                                    {workerHistory.worker.team?.name}
+                                </p>
+                            </div>
+                            <div className="history-list" style={{ maxHeight: '400px', overflowY: 'auto' }}>
+                                <table className="attendance-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Date</th>
+                                            <th>Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {workerHistory.attendance.map(h => (
+                                            <tr key={h.id}>
+                                                <td>{new Date(h.date).toLocaleDateString()}</td>
+                                                <td>
+                                                    <span className={`status-badge ${h.status}`}>
+                                                        {h.status}
+                                                    </span>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                        {workerHistory.attendance.length === 0 && (
+                                            <tr>
+                                                <td colSpan="2" style={{ textAlign: 'center', padding: '1rem' }}>No history found</td>
+                                            </tr>
+                                        )}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </>
+                    )}
+                </div>
             </Modal>
         </div>
     );

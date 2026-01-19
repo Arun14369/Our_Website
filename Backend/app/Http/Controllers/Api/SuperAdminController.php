@@ -13,11 +13,20 @@ class SuperAdminController extends Controller
 {
     public function dashboardStats()
     {
+        $last7Days = collect(range(6, 0))->map(function ($days) {
+            $date = now()->subDays($days)->toDateString();
+            return [
+                'date' => $date,
+                'count' => Attendance::whereDate('date', $date)->where('status', 'present')->count(),
+            ];
+        });
+
         return response()->json([
             'total_companies' => Company::count(),
             'total_supervisors' => User::where('role', 'supervisor')->count(),
             'total_workers' => Worker::count(),
             'today_attendance' => Attendance::whereDate('date', now()->toDateString())->count(),
+            'attendance_trend' => $last7Days,
         ]);
     }
 
@@ -141,16 +150,38 @@ class SuperAdminController extends Controller
 
     public function allAttendance(Request $request)
     {
+        $date = $request->query('date', now()->toDateString());
+        $companyId = $request->query('company_id');
+
+        if ($companyId && $companyId !== 'all') {
+            // Return all workers for this company with their attendance for this date
+            $workers = Worker::where('company_id', $companyId)
+                ->with(['team', 'attendances' => function($q) use ($date) {
+                    $q->whereDate('date', $date)->with('supervisor');
+                }])
+                ->get();
+            
+            // Map to unified structure
+            $records = $workers->map(function($worker) use ($date) {
+                $attendance = $worker->attendances->first();
+                return [
+                    'id' => $attendance?->id,
+                    'worker_id' => $worker->id,
+                    'worker' => $worker,
+                    'date' => $date,
+                    'status' => $attendance?->status ?? 'not_marked',
+                    'notes' => $attendance?->notes,
+                    'supervisor' => $attendance?->supervisor,
+                ];
+            });
+            
+            return response()->json($records);
+        }
+
         $query = Attendance::with(['worker', 'worker.company', 'worker.team', 'supervisor']);
 
         if ($request->has('date')) {
             $query->whereDate('date', $request->date);
-        }
-
-        if ($request->has('company_id') && $request->company_id !== 'all') {
-            $query->whereHas('worker', function($q) use ($request) {
-                $q->where('company_id', $request->company_id);
-            });
         }
 
         return response()->json($query->orderBy('date', 'desc')->get());
@@ -173,5 +204,66 @@ class SuperAdminController extends Controller
         $attendance = Attendance::findOrFail($id);
         $attendance->delete();
         return response()->json(['message' => 'Attendance record deleted successfully']);
+    }
+
+    public function workerHistory($id)
+    {
+        $worker = Worker::with(['company', 'team'])->findOrFail($id);
+        $attendance = Attendance::where('worker_id', $id)
+            ->orderBy('date', 'desc')
+            ->get();
+
+        return response()->json([
+            'worker' => $worker,
+            'attendance' => $attendance
+        ]);
+    }
+
+    public function exportAttendance(Request $request)
+    {
+        $startDate = $request->query('start_date', now()->toDateString());
+        $endDate = $request->query('end_date', now()->toDateString());
+        $companyId = $request->query('company_id');
+
+        $workerQuery = Worker::with(['company', 'team']);
+        if ($companyId && $companyId !== 'all') {
+            $workerQuery->where('company_id', $companyId);
+        }
+        $workers = $workerQuery->get();
+
+        $csvFileName = 'attendance_report_' . now()->timestamp . '.csv';
+        $headers = [
+            "Content-type"        => "text/csv",
+            "Content-Disposition" => "attachment; filename=$csvFileName",
+            "Pragma"              => "no-cache",
+            "Cache-Control"       => "must-revalidate, post-check=0, pre-check=0",
+            "Expires"             => "0"
+        ];
+
+        $handle = fopen('php://temp', 'w+');
+        fputcsv($handle, ['Date', 'Worker Name', 'Company', 'Team', 'Status', 'Notes']);
+
+        foreach ($workers as $worker) {
+            // If exporting a range, we might need a row per day. 
+            // For now, if start == end (standard dashboard behavior), we do one row.
+            $attendance = Attendance::where('worker_id', $worker->id)
+                ->whereBetween('date', [$startDate, $endDate])
+                ->first();
+
+            fputcsv($handle, [
+                $startDate == $endDate ? $startDate : "$startDate to $endDate",
+                $worker->name,
+                $worker->company->name,
+                $worker->team->name,
+                $attendance?->status ?? 'Not Marked',
+                $attendance?->notes ?? '-'
+            ]);
+        }
+
+        rewind($handle);
+        $csvContent = stream_get_contents($handle);
+        fclose($handle);
+
+        return response($csvContent, 200, $headers);
     }
 }
