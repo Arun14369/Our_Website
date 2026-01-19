@@ -1,0 +1,830 @@
+import React, { useState, useEffect } from 'react';
+import { useAuth } from '../context/AuthContext';
+import api from '../services/api';
+import Modal from '../components/Modal';
+import './Dashboard.css';
+
+function Dashboard() {
+    const { user, logout } = useAuth();
+    const [companies, setCompanies] = useState([]);
+    const [workers, setWorkers] = useState([]);
+    const [reports, setReports] = useState([]);
+    const [supervisors, setSupervisors] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [activeTab, setActiveTab] = useState('companies');
+    const [selectedCompany, setSelectedCompany] = useState(null);
+    const [workerSearch, setWorkerSearch] = useState('');
+    
+    // Modal states
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [modalType, setModalType] = useState(''); // 'company', 'worker', 'supervisor'
+    const [editingItem, setEditingItem] = useState(null);
+    const [formData, setFormData] = useState({});
+
+    useEffect(() => {
+        fetchData();
+    }, []);
+
+    const fetchData = async () => {
+        try {
+            const [companiesRes, workersRes, reportsRes, supervisorsRes] = await Promise.all([
+                api.get('/companies'),
+                api.get('/workers'),
+                api.get('/reports'),
+                api.get('/users?role=supervisor')
+            ]);
+            
+            setCompanies(companiesRes.data);
+            setWorkers(workersRes.data);
+            setReports(reportsRes.data);
+            setSupervisors(supervisorsRes.data);
+        } catch (error) {
+            console.error('Error fetching data:', error);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleLogout = async () => {
+        await logout();
+        window.location.href = '/login';
+    };
+
+    // Company CRUD
+    const viewCompanyDetails = (company) => {
+        setSelectedCompany(company);
+    };
+
+    const backToCompaniesList = () => {
+        setSelectedCompany(null);
+    };
+
+    const getCompanyWorkers = (companyId) => {
+        return workers.filter(w => w.company_id === companyId);
+    };
+
+    const getCompanyReports = (companyId) => {
+        return reports.filter(r => r.company_id === companyId);
+    };
+
+    const getTeamCount = (companyWorkers, team) => {
+        return companyWorkers.filter(w => w.team === team && w.is_active).length;
+    };
+
+    const filterWorkers = (workers) => {
+        if (!workerSearch) return workers;
+        const search = workerSearch.toLowerCase();
+        return workers.filter(w => 
+            w.name.toLowerCase().includes(search) ||
+            w.position?.toLowerCase().includes(search) ||
+            w.contact_number?.includes(search)
+        );
+    };
+
+    const openCompanyModal = (company = null) => {
+        setModalType('company');
+        setEditingItem(company);
+        setFormData(company || { name: '', location: '', description: '' });
+        setIsModalOpen(true);
+    };
+
+    const saveCompany = async (e) => {
+        e.preventDefault();
+        try {
+            if (editingItem) {
+                await api.put(`/companies/${editingItem.id}`, formData);
+            } else {
+                await api.post('/companies', formData);
+            }
+            fetchData();
+            setIsModalOpen(false);
+        } catch (error) {
+            alert('Error saving company');
+        }
+    };
+
+    const deleteCompany = async (id) => {
+        if (window.confirm('Are you sure you want to delete this company?')) {
+            try {
+                await api.delete(`/companies/${id}`);
+                fetchData();
+            } catch (error) {
+                alert('Error deleting company');
+            }
+        }
+    };
+
+    // Worker CRUD
+    const openWorkerModal = (worker = null, preSelectedCompanyId = null) => {
+        setModalType('worker');
+        setEditingItem(worker);
+        const defaultCompanyId = preSelectedCompanyId || (companies.length > 0 ? companies[0].id : '');
+        setFormData(worker || {
+            name: '',
+            company_id: defaultCompanyId,
+            team: 'operators',
+            position: '',
+            contact_number: '',
+            joining_date: '',
+            salary: ''
+        });
+        setIsModalOpen(true);
+    };
+
+    const saveWorker = async (e) => {
+        e.preventDefault();
+        try {
+            if (!formData.company_id) {
+                alert('Please select a company');
+                return;
+            }
+            if (editingItem) {
+                await api.put(`/workers/${editingItem.id}`, formData);
+            } else {
+                await api.post('/workers', formData);
+            }
+            await fetchData();
+            
+            // If we're in company detail view, refresh the selected company
+            if (selectedCompany && formData.company_id === selectedCompany.id) {
+                const updatedCompany = await api.get(`/companies/${selectedCompany.id}`);
+                setSelectedCompany(updatedCompany.data);
+            }
+            
+            setIsModalOpen(false);
+        } catch (error) {
+            console.error('Worker save error:', error);
+            const errorMsg = error.response?.data?.message || error.response?.data?.errors || 'Error saving worker';
+            alert(typeof errorMsg === 'object' ? JSON.stringify(errorMsg) : errorMsg);
+        }
+    };
+
+    const deleteWorker = async (id) => {
+        if (window.confirm('Are you sure you want to delete this worker?')) {
+            try {
+                await api.delete(`/workers/${id}`);
+                fetchData();
+            } catch (error) {
+                alert('Error deleting worker');
+            }
+        }
+    };
+
+    // Report Delete
+    const deleteReport = async (id) => {
+        if (window.confirm('Are you sure you want to delete this report?')) {
+            try {
+                await api.delete(`/reports/${id}`);
+                fetchData();
+            } catch (error) {
+                alert('Error deleting report');
+            }
+        }
+    };
+
+    // Supervisor CRUD
+    const openSupervisorModal = (supervisor = null, preSelectedCompanyId = null) => {
+        setModalType('supervisor');
+        setEditingItem(supervisor);
+        setFormData(supervisor || {
+            name: '',
+            email: '',
+            password: '',
+            phone: '',
+            address: '',
+            company_id: preSelectedCompanyId || ''
+        });
+        setIsModalOpen(true);
+    };
+
+    const saveSupervisor = async (e) => {
+        e.preventDefault();
+        try {
+            const data = { 
+                ...formData, 
+                role: 'supervisor',
+                company_id: formData.company_id || null  // Ensure null instead of empty string
+            };
+            if (editingItem) {
+                // Don't send password if empty during edit
+                if (!data.password) {
+                    delete data.password;
+                }
+                await api.put(`/users/${editingItem.id}`, data);
+            } else {
+                await api.post('/register', data);
+            }
+            await fetchData(); // Wait for data to refresh
+            
+            // If we're in company detail view, refresh the selected company
+            if (selectedCompany && data.company_id === selectedCompany.id) {
+                const updatedCompany = await api.get(`/companies/${selectedCompany.id}`);
+                setSelectedCompany(updatedCompany.data);
+            }
+            
+            setIsModalOpen(false);
+        } catch (error) {
+            console.error('Error saving supervisor:', error);
+            alert('Error saving supervisor: ' + (error.response?.data?.message || 'Unknown error'));
+        }
+    };
+
+    const deleteSupervisor = async (id) => {
+        const supervisor = supervisors.find(s => s.id === id);
+        const confirmMessage = supervisor?.company?.name 
+            ? `Are you sure you want to remove ${supervisor.name} from ${supervisor.company.name}? The supervisor will be deleted.`
+            : `Are you sure you want to delete ${supervisor?.name || 'this supervisor'}?`;
+            
+        if (window.confirm(confirmMessage)) {
+            try {
+                await api.delete(`/users/${id}`);
+                await fetchData();
+                // If we're in company detail view, refresh the selected company
+                if (selectedCompany) {
+                    const updatedCompany = await api.get(`/companies/${selectedCompany.id}`);
+                    setSelectedCompany(updatedCompany.data);
+                }
+            } catch (error) {
+                console.error('Error deleting supervisor:', error);
+                alert('Error deleting supervisor: ' + (error.response?.data?.message || 'Unknown error'));
+            }
+        }
+    };
+
+    if (loading) {
+        return <div className="loading">Loading...</div>;
+    }
+
+    return (
+        <div className="dashboard">
+            <div className="dashboard-header">
+                <div>
+                    <h1>Super Admin Dashboard</h1>
+                    <p>Welcome, {user?.name}</p>
+                </div>
+                <button onClick={handleLogout} className="logout-btn">Logout</button>
+            </div>
+
+            <div className="stats-grid">
+                <div className="stat-card">
+                    <h3>{companies.length}</h3>
+                    <p>Total Companies</p>
+                </div>
+                <div className="stat-card">
+                    <h3>{supervisors.length}</h3>
+                    <p>Supervisors</p>
+                </div>
+                <div className="stat-card">
+                    <h3>{workers.length}</h3>
+                    <p>Total Workers</p>
+                </div>
+                <div className="stat-card">
+                    <h3>{reports.length}</h3>
+                    <p>Total Reports</p>
+                </div>
+            </div>
+
+            <div className="dashboard-tabs">
+                <button 
+                    className={activeTab === 'companies' ? 'active' : ''} 
+                    onClick={() => setActiveTab('companies')}
+                >
+                    Companies
+                </button>
+                <button 
+                    className={activeTab === 'supervisors' ? 'active' : ''} 
+                    onClick={() => setActiveTab('supervisors')}
+                >
+                    Supervisors
+                </button>
+                <button 
+                    className={activeTab === 'workers' ? 'active' : ''} 
+                    onClick={() => setActiveTab('workers')}
+                >
+                    Workers
+                </button>
+                <button 
+                    className={activeTab === 'reports' ? 'active' : ''} 
+                    onClick={() => setActiveTab('reports')}
+                >
+                    Reports
+                </button>
+            </div>
+
+            <div className="dashboard-content">
+                {activeTab === 'companies' && !selectedCompany && (
+                    <div className="table-container">
+                        <div className="section-header">
+                            <h2>Companies</h2>
+                            <button className="btn-add" onClick={() => openCompanyModal()}>
+                                + Add Company
+                            </button>
+                        </div>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Location</th>
+                                    <th>Supervisor</th>
+                                    <th>Workers</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {companies.map(company => (
+                                    <tr key={company.id} style={{cursor: 'pointer'}}>
+                                        <td onClick={() => viewCompanyDetails(company)} style={{color: '#667eea', fontWeight: '600'}}>
+                                            {company.name}
+                                        </td>
+                                        <td>{company.location || 'N/A'}</td>
+                                        <td>{company.supervisor?.name || 'Not Assigned'}</td>
+                                        <td>{company.workers_count || 0}</td>
+                                        <td>
+                                            <span className={`status ${company.is_active ? 'active' : 'inactive'}`}>
+                                                {company.is_active ? 'Active' : 'Inactive'}
+                                            </span>
+                                        </td>
+                                        <td>
+                                            <button className="btn-view" onClick={() => viewCompanyDetails(company)}>View</button>
+                                            <button className="btn-edit" onClick={() => openCompanyModal(company)}>Edit</button>
+                                            <button className="btn-delete" onClick={() => deleteCompany(company.id)}>Delete</button>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+
+                {activeTab === 'companies' && selectedCompany && (
+                    <div className="company-detail-view">
+                        <div className="detail-header">
+                            <button className="btn-back" onClick={backToCompaniesList}>← Back to Companies</button>
+                            <div className="detail-actions">
+                                <button className="btn-edit" onClick={() => openCompanyModal(selectedCompany)}>Edit Company</button>
+                            </div>
+                        </div>
+
+                        <div className="company-info-card">
+                            <h2>{selectedCompany.name}</h2>
+                            <div className="info-grid">
+                                <div className="info-item">
+                                    <strong>Location:</strong> {selectedCompany.location || 'N/A'}
+                                </div>
+                                <div className="info-item">
+                                    <strong>Status:</strong> 
+                                    <span className={`status ${selectedCompany.is_active ? 'active' : 'inactive'}`}>
+                                        {selectedCompany.is_active ? 'Active' : 'Inactive'}
+                                    </span>
+                                </div>
+                                <div className="info-item">
+                                    <strong>Description:</strong> {selectedCompany.description || 'N/A'}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="supervisor-section">
+                            <div className="section-header">
+                                <h3>Assigned Supervisor</h3>
+                                <div>
+                                    {selectedCompany.supervisor ? (
+                                        <>
+                                            <button className="btn-edit" onClick={() => openSupervisorModal(selectedCompany.supervisor)}>Edit Supervisor</button>
+                                            <button className="btn-delete" onClick={() => deleteSupervisor(selectedCompany.supervisor.id)}>Remove Supervisor</button>
+                                        </>
+                                    ) : (
+                                        <button className="btn-add" onClick={() => openSupervisorModal(null, selectedCompany.id)}>+ Assign Supervisor</button>
+                                    )}
+                                </div>
+                            </div>
+                            {selectedCompany.supervisor ? (
+                                <div className="supervisor-card">
+                                    <p><strong>Name:</strong> {selectedCompany.supervisor.name}</p>
+                                    <p><strong>Email:</strong> {selectedCompany.supervisor.email}</p>
+                                    <p><strong>Phone:</strong> {selectedCompany.supervisor.phone || 'N/A'}</p>
+                                    <p><strong>Address:</strong> {selectedCompany.supervisor.address || 'N/A'}</p>
+                                </div>
+                            ) : (
+                                <p className="no-data">No supervisor assigned to this company</p>
+                            )}
+                        </div>
+
+                        <div className="workers-section">
+                            <div className="section-header">
+                                <h3>Workers ({getCompanyWorkers(selectedCompany.id).length})</h3>
+                                <div style={{display: 'flex', gap: '10px', alignItems: 'center'}}>
+                                    <div className="search-box">
+                                        <input
+                                            type="text"
+                                            placeholder="Search workers by name, position, contact..."
+                                            value={workerSearch}
+                                            onChange={(e) => setWorkerSearch(e.target.value)}
+                                            className="search-input"
+                                        />
+                                    </div>
+                                    <button className="btn-add" onClick={() => openWorkerModal(null, selectedCompany.id)}>+ Add Worker</button>
+                                </div>
+                            </div>
+                            
+                            <div className="team-stats">
+                                <div className="stat-item">
+                                    <span className="stat-number">{getTeamCount(getCompanyWorkers(selectedCompany.id), 'operators')}</span>
+                                    <span className="stat-label">Operators</span>
+                                </div>
+                                <div className="stat-item">
+                                    <span className="stat-number">{getTeamCount(getCompanyWorkers(selectedCompany.id), 'helpers')}</span>
+                                    <span className="stat-label">Helpers</span>
+                                </div>
+                                <div className="stat-item">
+                                    <span className="stat-number">{getTeamCount(getCompanyWorkers(selectedCompany.id), 'staff')}</span>
+                                    <span className="stat-label">Staff</span>
+                                </div>
+                            </div>
+
+                            {['operators', 'helpers', 'staff'].map(team => {
+                                const teamWorkers = filterWorkers(getCompanyWorkers(selectedCompany.id).filter(w => w.team === team));
+                                if (teamWorkers.length === 0) return null;
+                                
+                                return (
+                                    <div key={team} className="team-group">
+                                        <h4 className="team-title">{team.charAt(0).toUpperCase() + team.slice(1)} ({teamWorkers.length})</h4>
+                                        <div className="workers-grid">
+                                            {teamWorkers.map(worker => (
+                                                <div key={worker.id} className="worker-card-small">
+                                                    <h5>{worker.name}</h5>
+                                                    <p><strong>Position:</strong> {worker.position || 'N/A'}</p>
+                                                    <p><strong>Contact:</strong> {worker.contact_number || 'N/A'}</p>
+                                                    <span className={`status ${worker.is_active ? 'active' : 'inactive'}`}>
+                                                        {worker.is_active ? 'Active' : 'Inactive'}
+                                                    </span>
+                                                    <div className="worker-actions-small">
+                                                        <button className="btn-edit-small" onClick={() => openWorkerModal(worker)}>Edit</button>
+                                                        <button className="btn-delete-small" onClick={() => deleteWorker(worker.id)}>Delete</button>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                            
+                            {filterWorkers(getCompanyWorkers(selectedCompany.id)).length === 0 && (
+                                <p className="no-data">{workerSearch ? 'No workers found matching your search' : 'No workers in this company'}</p>
+                            )}
+                        </div>
+
+                        <div className="reports-section">
+                            <h3>Recent Reports ({getCompanyReports(selectedCompany.id).length})</h3>
+                            {getCompanyReports(selectedCompany.id).length > 0 ? (
+                                <table>
+                                    <thead>
+                                        <tr>
+                                            <th>Title</th>
+                                            <th>Supervisor</th>
+                                            <th>Date</th>
+                                            <th>File</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {getCompanyReports(selectedCompany.id).slice(0, 5).map(report => (
+                                            <tr key={report.id}>
+                                                <td>{report.title}</td>
+                                                <td>{report.supervisor?.name}</td>
+                                                <td>{new Date(report.report_date).toLocaleDateString()}</td>
+                                                <td>
+                                                    {report.file_path ? 
+                                                        <a href={`http://localhost:8000/storage/${report.file_path}`} target="_blank" rel="noopener noreferrer">
+                                                            View
+                                                        </a> : 'No file'
+                                                    }
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            ) : (
+                                <p className="no-data">No reports submitted yet</p>
+                            )}
+                        </div>
+                    </div>
+                )}
+
+                {activeTab === 'supervisors' && (
+                    <div className="table-container">
+                        <div className="section-header">
+                            <h2>Supervisors</h2>
+                            <button className="btn-add" onClick={() => openSupervisorModal()}>
+                                + Add Supervisor
+                            </button>
+                        </div>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Email</th>
+                                    <th>Phone</th>
+                                    <th>Company Assigned</th>
+                                    <th>Address</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {supervisors.map(supervisor => (
+                                    <tr key={supervisor.id}>
+                                        <td>{supervisor.name}</td>
+                                        <td>{supervisor.email}</td>
+                                        <td>{supervisor.phone || 'N/A'}</td>
+                                        <td>{supervisor.company?.name || 'Not Assigned'}</td>
+                                        <td>{supervisor.address || 'N/A'}</td>
+                                        <td>
+                                            <button className="btn-edit" onClick={() => openSupervisorModal(supervisor)}>Edit</button>
+                                            <button className="btn-delete" onClick={() => deleteSupervisor(supervisor.id)}>Delete</button>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+
+                {activeTab === 'workers' && (
+                    <div className="table-container">
+                        <div className="section-header">
+                            <h2>All Workers</h2>
+                            <button className="btn-add" onClick={() => openWorkerModal()}>
+                                + Add Worker
+                            </button>
+                        </div>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Name</th>
+                                    <th>Company</th>
+                                    <th>Team</th>
+                                    <th>Position</th>
+                                    <th>Contact</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {workers.map(worker => (
+                                    <tr key={worker.id}>
+                                        <td>{worker.name}</td>
+                                        <td>{worker.company?.name}</td>
+                                        <td><span className="team-badge">{worker.team}</span></td>
+                                        <td>{worker.position || 'N/A'}</td>
+                                        <td>{worker.contact_number || 'N/A'}</td>
+                                        <td>
+                                            <span className={`status ${worker.is_active ? 'active' : 'inactive'}`}>
+                                                {worker.is_active ? 'Active' : 'Inactive'}
+                                            </span>
+                                        </td>
+                                        <td>
+                                            <button className="btn-edit" onClick={() => openWorkerModal(worker)}>Edit</button>
+                                            <button className="btn-delete" onClick={() => deleteWorker(worker.id)}>Delete</button>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+
+                {activeTab === 'reports' && (
+                    <div className="table-container">
+                        <h2>All Reports</h2>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Title</th>
+                                    <th>Company</th>
+                                    <th>Supervisor</th>
+                                    <th>Date</th>
+                                    <th>File</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {reports.map(report => (
+                                    <tr key={report.id}>
+                                        <td>{report.title}</td>
+                                        <td>{report.company?.name}</td>
+                                        <td>{report.supervisor?.name}</td>
+                                        <td>{new Date(report.report_date).toLocaleDateString()}</td>
+                                        <td>
+                                            {report.file_path ? 
+                                                <a href={`http://localhost:8000/storage/${report.file_path}`} target="_blank" rel="noopener noreferrer">
+                                                    View
+                                                </a> : 'No file'
+                                            }
+                                        </td>
+                                        <td>
+                                            <button className="btn-delete" onClick={() => deleteReport(report.id)}>Delete</button>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+            </div>
+
+            {/* Company Modal */}
+            <Modal 
+                isOpen={isModalOpen && modalType === 'company'} 
+                onClose={() => setIsModalOpen(false)}
+                title={editingItem ? 'Edit Company' : 'Add Company'}
+            >
+                <form onSubmit={saveCompany}>
+                    <div className="form-group">
+                        <label>Company Name *</label>
+                        <input
+                            type="text"
+                            value={formData.name || ''}
+                            onChange={(e) => setFormData({...formData, name: e.target.value})}
+                            required
+                        />
+                    </div>
+                    <div className="form-group">
+                        <label>Location</label>
+                        <input
+                            type="text"
+                            value={formData.location || ''}
+                            onChange={(e) => setFormData({...formData, location: e.target.value})}
+                        />
+                    </div>
+                    <div className="form-group">
+                        <label>Description</label>
+                        <textarea
+                            value={formData.description || ''}
+                            onChange={(e) => setFormData({...formData, description: e.target.value})}
+                        />
+                    </div>
+                    <div className="form-actions">
+                        <button type="button" className="btn-cancel" onClick={() => setIsModalOpen(false)}>Cancel</button>
+                        <button type="submit" className="btn-submit">Save</button>
+                    </div>
+                </form>
+            </Modal>
+
+            {/* Worker Modal */}
+            <Modal 
+                isOpen={isModalOpen && modalType === 'worker'} 
+                onClose={() => setIsModalOpen(false)}
+                title={editingItem ? 'Edit Worker' : 'Add Worker'}
+            >
+                <form onSubmit={saveWorker}>
+                    <div className="form-group">
+                        <label>Worker Name *</label>
+                        <input
+                            type="text"
+                            value={formData.name || ''}
+                            onChange={(e) => setFormData({...formData, name: e.target.value})}
+                            required
+                        />
+                    </div>
+                    <div className="form-group">
+                        <label>Company *</label>
+                        <select
+                            value={formData.company_id || ''}
+                            onChange={(e) => setFormData({...formData, company_id: e.target.value ? parseInt(e.target.value) : ''})}
+                            required
+                            disabled={selectedCompany !== null}
+                        >
+                            <option value="">Select a company</option>
+                            {companies.map(c => (
+                                <option key={c.id} value={c.id}>{c.name}</option>
+                            ))}
+                        </select>
+                        {selectedCompany && (
+                            <small style={{color: '#667eea', marginTop: '5px', display: 'block'}}>
+                                Adding to {selectedCompany.name}
+                            </small>
+                        )}
+                    </div>
+                    <div className="form-group">
+                        <label>Team *</label>
+                        <select
+                            value={formData.team || 'operators'}
+                            onChange={(e) => setFormData({...formData, team: e.target.value})}
+                            required
+                        >
+                            <option value="operators">Operators</option>
+                            <option value="helpers">Helpers</option>
+                            <option value="staff">Staff</option>
+                            <option value="other">Other</option>
+                        </select>
+                    </div>
+                    <div className="form-group">
+                        <label>Position</label>
+                        <input
+                            type="text"
+                            value={formData.position || ''}
+                            onChange={(e) => setFormData({...formData, position: e.target.value})}
+                        />
+                    </div>
+                    <div className="form-group">
+                        <label>Contact Number</label>
+                        <input
+                            type="text"
+                            value={formData.contact_number || ''}
+                            onChange={(e) => setFormData({...formData, contact_number: e.target.value})}
+                        />
+                    </div>
+                    <div className="form-group">
+                        <label>Joining Date</label>
+                        <input
+                            type="date"
+                            value={formData.joining_date || ''}
+                            onChange={(e) => setFormData({...formData, joining_date: e.target.value})}
+                        />
+                    </div>
+                    <div className="form-group">
+                        <label>Salary</label>
+                        <input
+                            type="number"
+                            value={formData.salary || ''}
+                            onChange={(e) => setFormData({...formData, salary: e.target.value})}
+                        />
+                    </div>
+                    <div className="form-actions">
+                        <button type="button" className="btn-cancel" onClick={() => setIsModalOpen(false)}>Cancel</button>
+                        <button type="submit" className="btn-submit">Save</button>
+                    </div>
+                </form>
+            </Modal>
+
+            {/* Supervisor Modal */}
+            <Modal 
+                isOpen={isModalOpen && modalType === 'supervisor'} 
+                onClose={() => setIsModalOpen(false)}
+                title={editingItem ? 'Edit Supervisor' : 'Add Supervisor'}
+            >
+                <form onSubmit={saveSupervisor}>
+                    <div className="form-group">
+                        <label>Name *</label>
+                        <input
+                            type="text"
+                            value={formData.name || ''}
+                            onChange={(e) => setFormData({...formData, name: e.target.value})}
+                            required
+                        />
+                    </div>
+                    <div className="form-group">
+                        <label>Email *</label>
+                        <input
+                            type="email"
+                            value={formData.email || ''}
+                            onChange={(e) => setFormData({...formData, email: e.target.value})}
+                            required
+                        />
+                    </div>
+                    <div className="form-group">
+                        <label>Assign Company</label>
+                        <select
+                            value={formData.company_id || ''}
+                            onChange={(e) => setFormData({...formData, company_id: e.target.value ? parseInt(e.target.value) : null})}
+                        >
+                            <option value="">No Company Assigned</option>
+                            {companies.map(c => (
+                                <option key={c.id} value={c.id}>{c.name}</option>
+                            ))}
+                        </select>
+                    </div>
+                    <div className="form-group">
+                        <label>Password {editingItem ? '(leave blank to keep current)' : '*'}</label>
+                        <input
+                            type="password"
+                            value={formData.password || ''}
+                            onChange={(e) => setFormData({...formData, password: e.target.value})}
+                            required={!editingItem}
+                        />
+                    </div>
+                    <div className="form-group">
+                        <label>Phone</label>
+                        <input
+                            type="text"
+                            value={formData.phone || ''}
+                            onChange={(e) => setFormData({...formData, phone: e.target.value})}
+                        />
+                    </div>
+                    <div className="form-group">
+                        <label>Address</label>
+                        <textarea
+                            value={formData.address || ''}
+                            onChange={(e) => setFormData({...formData, address: e.target.value})}
+                        />
+                    </div>
+                    <div className="form-actions">
+                        <button type="button" className="btn-cancel" onClick={() => setIsModalOpen(false)}>Cancel</button>
+                        <button type="submit" className="btn-submit">Save</button>
+                    </div>
+                </form>
+            </Modal>
+        </div>
+    );
+}
+
+export default Dashboard;

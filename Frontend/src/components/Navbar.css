@@ -1,0 +1,196 @@
+.top-bar {
+  background: var(--dark-color);
+  color: var(--white);
+  padding: 0.5rem 0;
+  font-size: 0.875rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.top-bar-content {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.contact-info {
+  display: flex;
+  gap: 1.5rem;
+}
+
+.contact-info a {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--text-light);
+  transition: var(--transition);
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.contact-info a:hover {
+  color: var(--white);
+}
+
+.navbar {
+  background: var(--white);
+  padding: 1rem 0;
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  transition: var(--transition);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.navbar.scrolled {
+  padding: 0.75rem 0;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  box-shadow: var(--shadow-sm);
+}
+
+.nav-wrapper {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--dark-color);
+  text-decoration: none;
+}
+
+.logo-icon {
+  font-size: 1.75rem;
+}
+
+.logo-text {
+  color: var(--dark-color);
+  letter-spacing: -0.02em;
+}
+
+.nav-menu {
+  display: flex;
+  list-style: none;
+  gap: 2rem;
+  align-items: center;
+  margin: 0;
+  padding: 0;
+}
+
+.nav-menu li a {
+  font-weight: 500;
+  color: var(--text-color);
+  transition: var(--transition);
+  font-size: 0.95rem;
+  padding: 0.5rem 0;
+}
+
+.nav-menu li a:hover {
+  color: var(--primary-color);
+}
+
+.nav-actions {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+}
+
+.nav-btn {
+  padding: 0.5rem 1.25rem;
+  font-size: 0.9rem;
+}
+
+.hamburger {
+  display: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  color: var(--dark-color);
+  padding: 0.5rem;
+}
+
+@media (max-width: 968px) {
+  .top-bar {
+    display: none;
+  }
+
+  .hamburger {
+    display: block;
+  }
+
+  .nav-menu {
+    position: fixed;
+    top: 70px;
+    /* Adjust based on navbar height */
+    left: 0;
+    width: 100%;
+    background: var(--white);
+    flex-direction: column;
+    padding: 2rem;
+    gap: 1.5rem;
+    transform: translateY(-150%);
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: var(--shadow-md);
+    border-bottom: 1px solid var(--border-color);
+    z-index: 999;
+  }
+
+  .nav-menu.active {
+    transform: translateY(0);
+  }
+
+  .nav-actions {
+    display: none;
+    /* Simplify mobile menu for now, or move inside nav-menu via JS if needed, but for CSS only fix: */
+  }
+
+  /* If we want actions in mobile menu, they need to be inside the list or handled separately. 
+     For now, we'll hide the separate desktop actions block and rely on the menu links. 
+     The Login/Dashboard buttons usually should be in the menu on mobile.
+     The current React code keeps them separate. Let's make them visible in a mobile friendly way or just hide on mobile?
+     Actually, better to wrap them or adjust styles.
+  */
+
+  .nav-actions {
+    display: none;
+  }
+
+  /* We need to show the login button in mobile menu ideally. 
+     However, avoiding JS changes for now, let's just make the menu cleaner.
+     Wait, the React code has .nav-actions separate. 
+     Let's try to position .nav-actions for mobile if possible, or just accept they are hidden for a moment 
+     and I will add a task to fix mobile structure in React if needed. 
+     Actually, let's look at the React structure:
+     nav-menu is UL. nav-actions is DIV.
+     We can make nav-actions appear below nav-menu in mobile.
+  */
+}
+
+@media (max-width: 968px) {
+  .nav-wrapper {
+    position: static;
+  }
+
+  .nav-actions {
+    display: flex;
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    background: var(--white);
+    padding: 1rem;
+    justify-content: center;
+    box-shadow: 0 -4px 6px -1px rgba(0, 0, 0, 0.1);
+    z-index: 1000;
+    transform: translateY(100%);
+    transition: transform 0.3s;
+  }
+
+  .nav-menu.active~.nav-actions {
+    transform: translateY(0);
+  }
+}

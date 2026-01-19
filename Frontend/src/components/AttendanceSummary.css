@@ -1,0 +1,186 @@
+.attendance-summary {
+    background: white;
+    padding: 25px;
+    border-radius: 16px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    margin-bottom: 25px;
+}
+
+.attendance-summary h3 {
+    margin: 0 0 20px 0;
+    font-size: 20px;
+    font-weight: 700;
+    color: #1a1a1a;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.attendance-summary h3 i {
+    color: #667eea;
+}
+
+.summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 15px;
+    margin-bottom: 25px;
+}
+
+.summary-card {
+    background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+    padding: 20px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    transition: all 0.3s ease;
+    border: 2px solid transparent;
+}
+
+.summary-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.1);
+}
+
+.summary-card.present {
+    background: linear-gradient(135deg, #d4edda 0%, #a8d5ba 100%);
+    border-color: #28a745;
+}
+
+.summary-card.absent {
+    background: linear-gradient(135deg, #f8d7da 0%, #f5c6cb 100%);
+    border-color: #dc3545;
+}
+
+.summary-card.half-day {
+    background: linear-gradient(135deg, #fff3cd 0%, #ffeaa7 100%);
+    border-color: #ffc107;
+}
+
+.summary-card.leave {
+    background: linear-gradient(135deg, #d1ecf1 0%, #bee5eb 100%);
+    border-color: #17a2b8;
+}
+
+.summary-icon {
+    width: 50px;
+    height: 50px;
+    background: rgba(255, 255, 255, 0.5);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+}
+
+.summary-card.present .summary-icon {
+    color: #155724;
+}
+
+.summary-card.absent .summary-icon {
+    color: #721c24;
+}
+
+.summary-card.half-day .summary-icon {
+    color: #856404;
+}
+
+.summary-card.leave .summary-icon {
+    color: #0c5460;
+}
+
+.summary-info {
+    display: flex;
+    flex-direction: column;
+}
+
+.summary-number {
+    font-size: 28px;
+    font-weight: 800;
+    line-height: 1;
+    margin-bottom: 5px;
+}
+
+.summary-card.present .summary-number {
+    color: #155724;
+}
+
+.summary-card.absent .summary-number {
+    color: #721c24;
+}
+
+.summary-card.half-day .summary-number {
+    color: #856404;
+}
+
+.summary-card.leave .summary-number {
+    color: #0c5460;
+}
+
+.summary-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.attendance-percentage {
+    background: #f8f9fa;
+    padding: 20px;
+    border-radius: 12px;
+}
+
+.percentage-bar {
+    width: 100%;
+    height: 12px;
+    background: #e0e0e0;
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 12px;
+}
+
+.percentage-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+    border-radius: 10px;
+    transition: width 0.5s ease;
+    animation: fillAnimation 1s ease-out;
+}
+
+@keyframes fillAnimation {
+    from {
+        width: 0;
+    }
+}
+
+.percentage-text {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.percentage-value {
+    font-size: 24px;
+    font-weight: 800;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.percentage-label {
+    font-size: 14px;
+    font-weight: 600;
+    color: #666;
+}
+
+.attendance-summary.loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 200px;
+    color: #667eea;
+    font-weight: 600;
+}
