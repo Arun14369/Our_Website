@@ -196,6 +196,7 @@ function SupervisorDashboard() {
 
     const handleExportAttendance = async () => {
         try {
+            toast.loading('Preparing export...', { id: 'export-toast' });
             const params = {
                 start_date: attendanceDate,
                 end_date: attendanceDate
@@ -204,15 +205,23 @@ function SupervisorDashboard() {
                 params,
                 responseType: 'blob'
             });
-            const url = window.URL.createObjectURL(new Blob([response.data]));
+
+            // Create a blob URL and trigger download
+            const blob = new Blob([response.data], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
             const link = document.createElement('a');
             link.href = url;
             link.setAttribute('download', `Company_Attendance_${attendanceDate}.csv`);
             document.body.appendChild(link);
             link.click();
-            link.remove();
+
+            // Cleanup
+            document.body.removeChild(link);
+            window.URL.revokeObjectURL(url);
+            toast.success('Report downloaded', { id: 'export-toast' });
         } catch (error) {
-            toast.error('Export failed');
+            console.error('Export failed:', error);
+            toast.error('Export failed. Please try again.', { id: 'export-toast' });
         }
     };
 

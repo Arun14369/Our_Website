@@ -150,16 +150,38 @@ class SuperAdminController extends Controller
 
     public function allAttendance(Request $request)
     {
+        $date = $request->query('date', now()->toDateString());
+        $companyId = $request->query('company_id');
+
+        if ($companyId && $companyId !== 'all') {
+            // Return all workers for this company with their attendance for this date
+            $workers = Worker::where('company_id', $companyId)
+                ->with(['team', 'attendances' => function($q) use ($date) {
+                    $q->whereDate('date', $date)->with('supervisor');
+                }])
+                ->get();
+            
+            // Map to unified structure
+            $records = $workers->map(function($worker) use ($date) {
+                $attendance = $worker->attendances->first();
+                return [
+                    'id' => $attendance?->id,
+                    'worker_id' => $worker->id,
+                    'worker' => $worker,
+                    'date' => $date,
+                    'status' => $attendance?->status ?? 'not_marked',
+                    'notes' => $attendance?->notes,
+                    'supervisor' => $attendance?->supervisor,
+                ];
+            });
+            
+            return response()->json($records);
+        }
+
         $query = Attendance::with(['worker', 'worker.company', 'worker.team', 'supervisor']);
 
         if ($request->has('date')) {
             $query->whereDate('date', $request->date);
-        }
-
-        if ($request->has('company_id') && $request->company_id !== 'all') {
-            $query->whereHas('worker', function($q) use ($request) {
-                $q->where('company_id', $request->company_id);
-            });
         }
 
         return response()->json($query->orderBy('date', 'desc')->get());
@@ -199,49 +221,49 @@ class SuperAdminController extends Controller
 
     public function exportAttendance(Request $request)
     {
-        $query = Attendance::with(['worker', 'worker.company', 'worker.team']);
+        $startDate = $request->query('start_date', now()->toDateString());
+        $endDate = $request->query('end_date', now()->toDateString());
+        $companyId = $request->query('company_id');
 
-        if ($request->has('company_id') && $request->company_id !== 'all') {
-            $query->whereHas('worker', function($q) use ($request) {
-                $q->where('company_id', $request->company_id);
-            });
+        $workerQuery = Worker::with(['company', 'team']);
+        if ($companyId && $companyId !== 'all') {
+            $workerQuery->where('company_id', $companyId);
         }
-
-        if ($request->has('start_date') && $request->has('end_date')) {
-            $query->whereBetween('date', [$request->start_date, $request->end_date]);
-        }
-
-        $records = $query->get();
+        $workers = $workerQuery->get();
 
         $csvFileName = 'attendance_report_' . now()->timestamp . '.csv';
-        $headers = array(
+        $headers = [
             "Content-type"        => "text/csv",
             "Content-Disposition" => "attachment; filename=$csvFileName",
             "Pragma"              => "no-cache",
             "Cache-Control"       => "must-revalidate, post-check=0, pre-check=0",
             "Expires"             => "0"
-        );
+        ];
 
-        $columns = array('Date', 'Worker Name', 'Company', 'Team', 'Status', 'Notes');
+        $handle = fopen('php://temp', 'w+');
+        fputcsv($handle, ['Date', 'Worker Name', 'Company', 'Team', 'Status', 'Notes']);
 
-        $callback = function() use($records, $columns) {
-            $file = fopen('php://output', 'w');
-            fputcsv($file, $columns);
+        foreach ($workers as $worker) {
+            // If exporting a range, we might need a row per day. 
+            // For now, if start == end (standard dashboard behavior), we do one row.
+            $attendance = Attendance::where('worker_id', $worker->id)
+                ->whereBetween('date', [$startDate, $endDate])
+                ->first();
 
-            foreach ($records as $record) {
-                fputcsv($file, array(
-                    $record->date,
-                    $record->worker->name,
-                    $record->worker->company->name,
-                    $record->worker->team->name,
-                    $record->status,
-                    $record->notes
-                ));
-            }
+            fputcsv($handle, [
+                $startDate == $endDate ? $startDate : "$startDate to $endDate",
+                $worker->name,
+                $worker->company->name,
+                $worker->team->name,
+                $attendance?->status ?? 'Not Marked',
+                $attendance?->notes ?? '-'
+            ]);
+        }
 
-            fclose($file);
-        };
+        rewind($handle);
+        $csvContent = stream_get_contents($handle);
+        fclose($handle);
 
-        return response()->stream($callback, 200, $headers);
+        return response($csvContent, 200, $headers);
     }
 }

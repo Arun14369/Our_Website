@@ -160,46 +160,44 @@ class SupervisorController extends Controller
 
     public function exportAttendance(Request $request)
     {
+        $startDate = $request->query('start_date', now()->toDateString());
+        $endDate = $request->query('end_date', now()->toDateString());
         $companyId = $request->user()->company_id;
-        $query = Attendance::whereHas('worker', function($q) use ($companyId) {
-                $q->where('company_id', $companyId);
-            })
-            ->with(['worker', 'worker.team']);
 
-        if ($request->has('start_date') && $request->has('end_date')) {
-            $query->whereBetween('date', [$request->start_date, $request->end_date]);
-        }
-
-        $records = $query->get();
+        $workers = Worker::where('company_id', $companyId)
+            ->with(['team'])
+            ->get();
 
         $csvFileName = 'company_attendance_report_' . now()->timestamp . '.csv';
-        $headers = array(
+        $headers = [
             "Content-type"        => "text/csv",
             "Content-Disposition" => "attachment; filename=$csvFileName",
             "Pragma"              => "no-cache",
             "Cache-Control"       => "must-revalidate, post-check=0, pre-check=0",
             "Expires"             => "0"
-        );
+        ];
 
-        $columns = array('Date', 'Worker Name', 'Team', 'Status', 'Notes');
+        $handle = fopen('php://temp', 'w+');
+        fputcsv($handle, ['Date', 'Worker Name', 'Team', 'Status', 'Notes']);
 
-        $callback = function() use($records, $columns) {
-            $file = fopen('php://output', 'w');
-            fputcsv($file, $columns);
+        foreach ($workers as $worker) {
+            $attendance = Attendance::where('worker_id', $worker->id)
+                ->whereBetween('date', [$startDate, $endDate])
+                ->first();
 
-            foreach ($records as $record) {
-                fputcsv($file, array(
-                    $record->date,
-                    $record->worker->name,
-                    $record->worker->team->name,
-                    $record->status,
-                    $record->notes
-                ));
-            }
+            fputcsv($handle, [
+                $startDate == $endDate ? $startDate : "$startDate to $endDate",
+                $worker->name,
+                $worker->team->name,
+                $attendance?->status ?? 'Not Marked',
+                $attendance?->notes ?? '-'
+            ]);
+        }
 
-            fclose($file);
-        };
+        rewind($handle);
+        $csvContent = stream_get_contents($handle);
+        fclose($handle);
 
-        return response()->stream($callback, 200, $headers);
+        return response($csvContent, 200, $headers);
     }
 }

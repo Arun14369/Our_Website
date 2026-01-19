@@ -396,6 +396,11 @@
     color: #92400e;
 }
 
+.status-badge.not_marked {
+    background: #f1f5f9;
+    color: #475569;
+}
+
 .history-modal-content {
     padding: 0.5rem 0;
 }

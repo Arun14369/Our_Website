@@ -23,6 +23,7 @@ function Dashboard() {
     const [teams, setTeams] = useState([]);
     const [attendanceRecords, setAttendanceRecords] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [attendanceLoading, setAttendanceLoading] = useState(false);
     const [activeTab, setActiveTab] = useState('overview');
 
     // Filtering states
@@ -73,6 +74,7 @@ function Dashboard() {
 
     const fetchAttendance = async () => {
         try {
+            setAttendanceLoading(true);
             const params = {
                 date: attendanceDateFilter,
                 company_id: attendanceCompanyFilter
@@ -81,6 +83,8 @@ function Dashboard() {
             setAttendanceRecords(res.data);
         } catch (error) {
             toast.error('Failed to load attendance records');
+        } finally {
+            setAttendanceLoading(false);
         }
     };
 
@@ -228,24 +232,33 @@ function Dashboard() {
 
     const handleExportAttendance = async () => {
         try {
+            toast.loading('Preparing export...', { id: 'export-toast' });
             const params = {
                 company_id: attendanceCompanyFilter,
                 start_date: attendanceDateFilter,
                 end_date: attendanceDateFilter
             };
-            const response = await api.get('/super-admin/attendance/export', { 
+            const response = await api.get('/super-admin/attendance/export', {
                 params,
                 responseType: 'blob'
             });
-            const url = window.URL.createObjectURL(new Blob([response.data]));
+
+            // Create a blob URL and trigger download
+            const blob = new Blob([response.data], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
             const link = document.createElement('a');
             link.href = url;
             link.setAttribute('download', `Attendance_Report_${attendanceDateFilter}.csv`);
             document.body.appendChild(link);
             link.click();
-            link.remove();
+
+            // Cleanup
+            document.body.removeChild(link);
+            window.URL.revokeObjectURL(url);
+            toast.success('Report downloaded', { id: 'export-toast' });
         } catch (error) {
-            toast.error('Export failed');
+            console.error('Export failed:', error);
+            toast.error('Export failed. Please try again.', { id: 'export-toast' });
         }
     };
 
@@ -364,20 +377,20 @@ function Dashboard() {
                                             <AreaChart data={stats.attendance_trend}>
                                                 <defs>
                                                     <linearGradient id="colorCount" x1="0" y1="0" x2="0" y2="1">
-                                                        <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.1}/>
-                                                        <stop offset="95%" stopColor="#4f46e5" stopOpacity={0}/>
+                                                        <stop offset="5%" stopColor="#4f46e5" stopOpacity={0.1} />
+                                                        <stop offset="95%" stopColor="#4f46e5" stopOpacity={0} />
                                                     </linearGradient>
                                                 </defs>
                                                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                                                <XAxis 
-                                                    dataKey="date" 
-                                                    axisLine={false} 
-                                                    tickLine={false} 
+                                                <XAxis
+                                                    dataKey="date"
+                                                    axisLine={false}
+                                                    tickLine={false}
                                                     tick={{ fontSize: 12, fill: '#64748b' }}
                                                     tickFormatter={(str) => new Date(str).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
                                                 />
                                                 <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#64748b' }} />
-                                                <Tooltip 
+                                                <Tooltip
                                                     contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
                                                     labelStyle={{ fontWeight: 600, marginBottom: '4px' }}
                                                 />
@@ -613,10 +626,16 @@ function Dashboard() {
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            {attendanceRecords.length === 0 ? (
+                                            {attendanceLoading ? (
                                                 <tr>
                                                     <td colSpan="6" style={{ textAlign: 'center', padding: '3rem', color: '#64748b' }}>
-                                                        No attendance records found for this date.
+                                                        Loading attendance data...
+                                                    </td>
+                                                </tr>
+                                            ) : attendanceRecords.length === 0 ? (
+                                                <tr>
+                                                    <td colSpan="6" style={{ textAlign: 'center', padding: '3rem', color: '#64748b' }}>
+                                                        No personnel found for this company.
                                                     </td>
                                                 </tr>
                                             ) : (
@@ -627,7 +646,7 @@ function Dashboard() {
                                                         <td>{record.supervisor?.name || 'Unknown'}</td>
                                                         <td>
                                                             <span className={`status-badge ${record.status}`}>
-                                                                {record.status === 'present' ? 'Present' : record.status === 'absent' ? 'Absent' : 'Half Day'}
+                                                                {record.status === 'present' ? 'Present' : record.status === 'absent' ? 'Absent' : record.status === 'half_day' ? 'Half Day' : 'Not Marked'}
                                                             </span>
                                                         </td>
                                                         <td style={{ fontSize: '0.85rem', maxWidth: '200px' }}>{record.notes || '-'}</td>
