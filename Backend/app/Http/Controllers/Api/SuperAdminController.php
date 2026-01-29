@@ -231,7 +231,13 @@ class SuperAdminController extends Controller
         }
         $workers = $workerQuery->get();
 
-        $csvFileName = 'attendance_report_' . now()->timestamp . '.csv';
+        // Eager load attendance for the date range to avoid N+1 queries
+        // We key the attendance by date to easily find it later
+        $workers->load(['attendances' => function ($query) use ($startDate, $endDate) {
+            $query->whereBetween('date', [$startDate, $endDate]);
+        }]);
+
+        $csvFileName = 'attendance_report_' . $startDate . '_to_' . $endDate . '.csv';
         $headers = [
             "Content-type"        => "text/csv",
             "Content-Disposition" => "attachment; filename=$csvFileName",
@@ -243,21 +249,28 @@ class SuperAdminController extends Controller
         $handle = fopen('php://temp', 'w+');
         fputcsv($handle, ['Date', 'Worker Name', 'Company', 'Team', 'Status', 'Notes']);
 
-        foreach ($workers as $worker) {
-            // If exporting a range, we might need a row per day. 
-            // For now, if start == end (standard dashboard behavior), we do one row.
-            $attendance = Attendance::where('worker_id', $worker->id)
-                ->whereBetween('date', [$startDate, $endDate])
-                ->first();
+        $currentDate = \Carbon\Carbon::parse($startDate);
+        $end = \Carbon\Carbon::parse($endDate);
 
-            fputcsv($handle, [
-                $startDate == $endDate ? $startDate : "$startDate to $endDate",
-                $worker->name,
-                $worker->company->name,
-                $worker->team->name,
-                $attendance?->status ?? 'Not Marked',
-                $attendance?->notes ?? '-'
-            ]);
+        while ($currentDate->lte($end)) {
+            $dateString = $currentDate->toDateString();
+
+            foreach ($workers as $worker) {
+                // Find attendance for this specific date in the eager loaded collection
+                $attendance = $worker->attendances->first(function ($att) use ($dateString) {
+                    return $att->date == $dateString;
+                });
+
+                fputcsv($handle, [
+                    $dateString,
+                    $worker->name,
+                    $worker->company->name,
+                    $worker->team?->name ?? 'N/A',
+                    $attendance?->status ?? 'Not Marked',
+                    $attendance?->notes ?? '-'
+                ]);
+            }
+            $currentDate->addDay();
         }
 
         rewind($handle);

@@ -230,32 +230,43 @@ function Dashboard() {
         }
     };
 
-    const handleExportAttendance = async () => {
+    const [exportDates, setExportDates] = useState({ start: '', end: '' });
+
+    const openExportModal = () => {
+        setExportDates({
+            start: attendanceDateFilter,
+            end: attendanceDateFilter
+        });
+        setModalType('export_options');
+        setIsModalOpen(true);
+    };
+
+    const handleExportConfirm = async (e) => {
+        e.preventDefault();
         try {
             toast.loading('Preparing export...', { id: 'export-toast' });
             const params = {
                 company_id: attendanceCompanyFilter,
-                start_date: attendanceDateFilter,
-                end_date: attendanceDateFilter
+                start_date: exportDates.start,
+                end_date: exportDates.end
             };
             const response = await api.get('/super-admin/attendance/export', {
                 params,
                 responseType: 'blob'
             });
 
-            // Create a blob URL and trigger download
             const blob = new Blob([response.data], { type: 'text/csv' });
             const url = window.URL.createObjectURL(blob);
             const link = document.createElement('a');
             link.href = url;
-            link.setAttribute('download', `Attendance_Report_${attendanceDateFilter}.csv`);
+            link.setAttribute('download', `Attendance_Report_${exportDates.start}_to_${exportDates.end}.csv`);
             document.body.appendChild(link);
             link.click();
 
-            // Cleanup
             document.body.removeChild(link);
             window.URL.revokeObjectURL(url);
             toast.success('Report downloaded', { id: 'export-toast' });
+            setIsModalOpen(false);
         } catch (error) {
             console.error('Export failed:', error);
             toast.error('Export failed. Please try again.', { id: 'export-toast' });
@@ -576,7 +587,7 @@ function Dashboard() {
                                             style={{ border: 'none', background: 'transparent', outline: 'none', fontWeight: 600 }}
                                         />
                                     </div>
-                                    <button className="add-btn" style={{ background: '#10b981' }} onClick={handleExportAttendance}>
+                                    <button className="add-btn" style={{ background: '#10b981' }} onClick={openExportModal}>
                                         <FaFileExport /> Export CSV
                                     </button>
                                 </div>
@@ -673,7 +684,8 @@ function Dashboard() {
                 modalType === 'company' ? (isEditMode ? 'Edit Company' : 'Add New Company') :
                     modalType === 'supervisor' ? (isEditMode ? 'Edit Supervisor' : 'Register Supervisor') :
                         modalType === 'worker' ? 'Edit Worker Details' :
-                            'Modify Attendance Record'
+                            modalType === 'export_options' ? 'Export Attendance Report' :
+                                'Modify Attendance Record'
             }>
                 {modalType === 'company' && (
                     <form onSubmit={handleCompanySubmit} className="modal-form">
@@ -768,6 +780,39 @@ function Dashboard() {
                             <textarea value={formData.notes || ''} onChange={(e) => setFormData({ ...formData, notes: e.target.value })} placeholder="Add remarks..." />
                         </div>
                         <button type="submit" className="submit-btn">Update Attendance Status</button>
+                    </form>
+                )}
+
+                {modalType === 'export_options' && (
+                    <form onSubmit={handleExportConfirm} className="modal-form">
+                        <div className="form-group">
+                            <label>Start Date</label>
+                            <input
+                                type="date"
+                                value={exportDates.start}
+                                max={exportDates.end}
+                                required
+                                onChange={(e) => setExportDates({ ...exportDates, start: e.target.value })}
+                            />
+                        </div>
+                        <div className="form-group">
+                            <label>End Date</label>
+                            <input
+                                type="date"
+                                value={exportDates.end}
+                                min={exportDates.start}
+                                required
+                                onChange={(e) => setExportDates({ ...exportDates, end: e.target.value })}
+                            />
+                        </div>
+                        <div className="form-group">
+                            <p style={{ fontSize: '0.85rem', color: '#64748b' }}>
+                                This will generate a comprehensive CSV report for all workers in the selected company ({companies.find(c => c.id.toString() === attendanceCompanyFilter)?.name || 'Unknown'}) for the date range specified.
+                            </p>
+                        </div>
+                        <button type="submit" className="submit-btn">
+                            <FaFileExport /> Download Report
+                        </button>
                     </form>
                 )}
 

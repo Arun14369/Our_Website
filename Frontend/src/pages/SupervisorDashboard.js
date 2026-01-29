@@ -194,31 +194,42 @@ function SupervisorDashboard() {
         }
     };
 
-    const handleExportAttendance = async () => {
+    const [exportDates, setExportDates] = useState({ start: '', end: '' });
+
+    const openExportModal = () => {
+        setExportDates({
+            start: attendanceDate,
+            end: attendanceDate
+        });
+        setModalType('export_options');
+        setIsModalOpen(true);
+    };
+
+    const handleExportConfirm = async (e) => {
+        e.preventDefault();
         try {
             toast.loading('Preparing export...', { id: 'export-toast' });
             const params = {
-                start_date: attendanceDate,
-                end_date: attendanceDate
+                start_date: exportDates.start,
+                end_date: exportDates.end
             };
             const response = await api.get('/supervisor/attendance/export', {
                 params,
                 responseType: 'blob'
             });
 
-            // Create a blob URL and trigger download
             const blob = new Blob([response.data], { type: 'text/csv' });
             const url = window.URL.createObjectURL(blob);
             const link = document.createElement('a');
             link.href = url;
-            link.setAttribute('download', `Company_Attendance_${attendanceDate}.csv`);
+            link.setAttribute('download', `Company_Attendance_${exportDates.start}_to_${exportDates.end}.csv`);
             document.body.appendChild(link);
             link.click();
 
-            // Cleanup
             document.body.removeChild(link);
             window.URL.revokeObjectURL(url);
             toast.success('Report downloaded', { id: 'export-toast' });
+            setIsModalOpen(false);
         } catch (error) {
             console.error('Export failed:', error);
             toast.error('Export failed. Please try again.', { id: 'export-toast' });
@@ -330,7 +341,7 @@ function SupervisorDashboard() {
                                     />
                                     <button
                                         className="action-btn-sm"
-                                        onClick={handleExportAttendance}
+                                        onClick={openExportModal}
                                         style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', border: '1px solid #e2e8f0', background: 'white', color: '#64748b' }}
                                     >
                                         <FaFileExport /> Export
@@ -497,84 +508,119 @@ function SupervisorDashboard() {
             </main>
 
             {/* Worker Modal */}
-            <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={modalType === 'add' ? 'Register New Worker' : 'Update Worker Details'}>
-                <form onSubmit={handleWorkerSubmit} className="modal-form">
-                    <div className="form-group">
-                        <label>Full Name</label>
-                        <input
-                            type="text"
-                            placeholder="e.g. Rahul Sharma"
-                            value={formData.name}
-                            required
-                            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                        />
-                    </div>
-                    <div className="form-group">
-                        <label>Phone Number (Optional)</label>
-                        <input
-                            type="text"
-                            placeholder="10-digit mobile"
-                            value={formData.phone}
-                            onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                        />
-                    </div>
-                    <div className="form-group">
-                        <label>Assign to Team</label>
-                        <select
-                            required
-                            value={formData.team_id}
-                            onChange={(e) => setFormData({ ...formData, team_id: e.target.value })}
-                        >
-                            <option value="">Select Team</option>
-                            {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
-                        </select>
-                    </div>
-                    <button type="submit" className="submit-btn">
-                        {modalType === 'add' ? 'Add Worker to Registry' : 'Save Updated Details'}
-                    </button>
-                </form>
-            </Modal>
+            <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={
+                modalType === 'add' ? 'Register New Worker' :
+                    modalType === 'edit' ? 'Update Worker Details' :
+                        modalType === 'export_options' ? 'Export Attendance Report' :
+                            'Worker Attendance History'
+            }>
+                {(modalType === 'add' || modalType === 'edit') && (
+                    <form onSubmit={handleWorkerSubmit} className="modal-form">
+                        <div className="form-group">
+                            <label>Full Name</label>
+                            <input
+                                type="text"
+                                placeholder="e.g. Rahul Sharma"
+                                value={formData.name}
+                                required
+                                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                            />
+                        </div>
+                        <div className="form-group">
+                            <label>Phone Number (Optional)</label>
+                            <input
+                                type="text"
+                                placeholder="10-digit mobile"
+                                value={formData.phone}
+                                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                            />
+                        </div>
+                        <div className="form-group">
+                            <label>Assign to Team</label>
+                            <select
+                                required
+                                value={formData.team_id}
+                                onChange={(e) => setFormData({ ...formData, team_id: e.target.value })}
+                            >
+                                <option value="">Select Team</option>
+                                {teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                            </select>
+                        </div>
+                        <button type="submit" className="submit-btn">
+                            {modalType === 'add' ? 'Add Worker to Registry' : 'Save Updated Details'}
+                        </button>
+                    </form>
+                )}
 
-            <Modal isOpen={isModalOpen && modalType === 'worker_history'} onClose={() => setIsModalOpen(false)} title="Worker Attendance History">
-                <div className="history-modal-content">
-                    {!workerHistory ? <p>Loading history...</p> : (
-                        <>
-                            <div className="worker-brief" style={{ marginBottom: '1.5rem', padding: '1rem', background: '#f8fafc', borderRadius: '8px' }}>
-                                <h4 style={{ margin: 0 }}>{workerHistory.worker.name}</h4>
-                                <p style={{ margin: '4px 0', fontSize: '0.875rem', color: '#64748b' }}>
-                                    {workerHistory.worker.team?.name}
-                                </p>
-                            </div>
-                            <div className="history-list" style={{ maxHeight: '400px', overflowY: 'auto' }}>
-                                <table className="attendance-table">
-                                    <thead>
-                                        <tr>
-                                            <th>Date</th>
-                                            <th>Status</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {workerHistory.attendance.map(h => (
-                                            <tr key={h.id}>
-                                                <td>{new Date(h.date).toLocaleDateString()}</td>
-                                                <td>
-                                                    <span className={`status-badge ${h.status}`}>
-                                                        {h.status}
-                                                    </span>
-                                                </td>
-                                            </tr>
-                                        ))}
-                                        {workerHistory.attendance.length === 0 && (
+                {modalType === 'export_options' && (
+                    <form onSubmit={handleExportConfirm} className="modal-form">
+                        <div className="form-group">
+                            <label>Start Date</label>
+                            <input
+                                type="date"
+                                value={exportDates.start}
+                                max={exportDates.end}
+                                required
+                                onChange={(e) => setExportDates({ ...exportDates, start: e.target.value })}
+                            />
+                        </div>
+                        <div className="form-group">
+                            <label>End Date</label>
+                            <input
+                                type="date"
+                                value={exportDates.end}
+                                min={exportDates.start}
+                                required
+                                onChange={(e) => setExportDates({ ...exportDates, end: e.target.value })}
+                            />
+                        </div>
+                        <button type="submit" className="submit-btn">
+                            <FaFileExport /> Download Report
+                        </button>
+                    </form>
+                )}
+
+                {modalType === 'worker_history' && (
+                    <div className="history-modal-content">
+                        {!workerHistory ? <p>Loading history...</p> : (
+                            <>
+                                <div className="worker-brief" style={{ marginBottom: '1.5rem', padding: '1rem', background: '#f8fafc', borderRadius: '8px' }}>
+                                    <h4 style={{ margin: 0 }}>{workerHistory.worker.name}</h4>
+                                    <p style={{ margin: '4px 0', fontSize: '0.875rem', color: '#64748b' }}>
+                                        {workerHistory.worker.team?.name}
+                                    </p>
+                                </div>
+                                <div className="history-list" style={{ maxHeight: '400px', overflowY: 'auto' }}>
+                                    <table className="attendance-table">
+                                        <thead>
                                             <tr>
-                                                <td colSpan="2" style={{ textAlign: 'center', padding: '1rem' }}>No history found</td>
+                                                <th>Date</th>
+                                                <th>Status</th>
                                             </tr>
-                                        )}
-                                    </tbody>
-                                </table>
-                            </div>
-                        </>
-                    )}
-                </div>
+                                        </thead>
+                                        <tbody>
+                                            {workerHistory.attendance.map(h => (
+                                                <tr key={h.id}>
+                                                    <td>{new Date(h.date).toLocaleDateString()}</td>
+                                                    <td>
+                                                        <span className={`status-badge ${h.status}`}>
+                                                            {h.status}
+                                                        </span>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                            {workerHistory.attendance.length === 0 && (
+                                                <tr>
+                                                    <td colSpan="2" style={{ textAlign: 'center', padding: '1rem' }}>No history found</td>
+                                                </tr>
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </>
+                        )}
+                    </div>
+                )}
             </Modal>
         </div>
     );
