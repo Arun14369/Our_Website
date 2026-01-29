@@ -168,7 +168,12 @@ class SupervisorController extends Controller
             ->with(['team'])
             ->get();
 
-        $csvFileName = 'company_attendance_report_' . now()->timestamp . '.csv';
+        // Eager load attendances for the date range
+        $workers->load(['attendances' => function ($query) use ($startDate, $endDate) {
+            $query->whereBetween('date', [$startDate, $endDate]);
+        }]);
+
+        $csvFileName = 'company_attendance_report_' . $startDate . '_to_' . $endDate . '.csv';
         $headers = [
             "Content-type"        => "text/csv",
             "Content-Disposition" => "attachment; filename=$csvFileName",
@@ -180,18 +185,26 @@ class SupervisorController extends Controller
         $handle = fopen('php://temp', 'w+');
         fputcsv($handle, ['Date', 'Worker Name', 'Team', 'Status', 'Notes']);
 
-        foreach ($workers as $worker) {
-            $attendance = Attendance::where('worker_id', $worker->id)
-                ->whereBetween('date', [$startDate, $endDate])
-                ->first();
+        $currentDate = \Carbon\Carbon::parse($startDate);
+        $end = \Carbon\Carbon::parse($endDate);
 
-            fputcsv($handle, [
-                $startDate == $endDate ? $startDate : "$startDate to $endDate",
-                $worker->name,
-                $worker->team->name,
-                $attendance?->status ?? 'Not Marked',
-                $attendance?->notes ?? '-'
-            ]);
+        while ($currentDate->lte($end)) {
+            $dateString = $currentDate->toDateString();
+
+            foreach ($workers as $worker) {
+                $attendance = $worker->attendances->first(function ($att) use ($dateString) {
+                    return $att->date == $dateString;
+                });
+
+                fputcsv($handle, [
+                    $dateString,
+                    $worker->name,
+                    $worker->team?->name ?? 'N/A',
+                    $attendance?->status ?? 'Not Marked',
+                    $attendance?->notes ?? '-'
+                ]);
+            }
+            $currentDate->addDay();
         }
 
         rewind($handle);
